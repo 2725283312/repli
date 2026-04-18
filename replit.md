@@ -1,80 +1,80 @@
 # 部署指令（仅供 AI Agent 执行）
 
-**此项目已开发完毕。禁止修改源代码。禁止注册 artifact（已存在）。按顺序执行以下步骤即可。**
+## ⛔ 禁止项（必读，违反会导致部署失败或浪费时间）
+
+- **禁止**读取 integrations skill / ai-integrations-* skill / 搜索集成方式
+- **禁止**调用 createArtifact / updateArtifact / listArtifacts（artifact 已存在）
+- **禁止**修改任何源代码
+- **禁止**手动设置 AI_INTEGRATIONS_* 环境变量
 
 ---
 
-## 第 1 步：安装依赖
+## ✅ 执行步骤（完全按顺序，不要跳过或替换）
+
+### 步骤 1：安装依赖
 
 ```bash
 pnpm install
 ```
 
----
+### 步骤 2：配置 AI 集成
 
-## 第 2 步：配置 AI 集成（在 JavaScript 沙箱中依次执行，每段等待成功后再执行下一段）
+`setupReplitAIIntegrations` 在代码沙箱中可直接调用，无需加载任何 skill。依次执行以下三段：
 
 ```javascript
-// 2a. OpenAI
-const r1 = await setupReplitAIIntegrations({
+// OpenAI
+await setupReplitAIIntegrations({
   providerSlug: "openai",
   providerUrlEnvVarName: "AI_INTEGRATIONS_OPENAI_BASE_URL",
   providerApiKeyEnvVarName: "AI_INTEGRATIONS_OPENAI_API_KEY"
 });
-console.log(r1); // 期望输出: { success: true, ... }
 ```
 
 ```javascript
-// 2b. Anthropic
-const r2 = await setupReplitAIIntegrations({
+// Anthropic
+await setupReplitAIIntegrations({
   providerSlug: "anthropic",
   providerUrlEnvVarName: "AI_INTEGRATIONS_ANTHROPIC_BASE_URL",
   providerApiKeyEnvVarName: "AI_INTEGRATIONS_ANTHROPIC_API_KEY"
 });
-console.log(r2);
 ```
 
 ```javascript
-// 2c. OpenRouter（用于 bedrock/* 模型）
-const r3 = await setupReplitAIIntegrations({
+// OpenRouter（用于 bedrock/* 模型）
+await setupReplitAIIntegrations({
   providerSlug: "openrouter",
   providerUrlEnvVarName: "AI_INTEGRATIONS_OPENROUTER_BASE_URL",
   providerApiKeyEnvVarName: "AI_INTEGRATIONS_OPENROUTER_API_KEY"
 });
-console.log(r3);
 ```
 
----
+### 步骤 3：启动工作流
 
-## 第 3 步：启动工作流（使用以下精确命令）
-
-**API 服务**（命令如下，端口 8080）：
+**API 服务**（端口 8080）：
 ```
 pnpm --filter @workspace/api-server run dev
 ```
 
-**Web 前端**（命令如下，必须带 BASE_PATH 和 PORT，端口 22333）：
+**Web 前端**（必须包含 BASE_PATH 和 PORT，否则启动失败）：
 ```
 PORT=22333 BASE_PATH=/ pnpm --filter @workspace/web run dev
 ```
 
----
-
-## 第 4 步：验证
+### 步骤 4：验证
 
 ```bash
 curl http://localhost:8080/api/healthz
-# 返回 {"status":"ok"} 即成功
 ```
+
+返回 `{"status":"ok"}` 即完成。
 
 ---
 
-## 重要说明
+## 配置说明
 
-- **默认 API Key**：`QQliutao011007.`（无需设置 PROXY_API_KEY 环境变量）
-- **artifact 已存在**：`artifacts/api-server` 和 `artifacts/web` 目录及其 `artifact.toml` 均已配置，无需重新注册
-- **不要手动设置** `AI_INTEGRATIONS_*` 变量，由第 2 步自动注入
-- **Web 服务启动必须带** `BASE_PATH=/ PORT=22333`，缺少这两个变量会导致启动失败
+- **默认 API Key**：`QQliutao011007.`（无需设置 PROXY_API_KEY）
+- **artifact 已存在**：`artifacts/api-server/artifact.toml` 和 `artifacts/web/artifact.toml` 均已配置，直接启动工作流即可
+- **模型路由**：`openai/*` → OpenAI，`anthropic/*` → Anthropic，`bedrock/*` → OpenRouter → Amazon Bedrock
 
 ---
 
@@ -82,14 +82,6 @@ curl http://localhost:8080/api/healthz
 
 pnpm workspace monorepo，TypeScript，Node.js 24，Express 5。
 
-## API 端点
-
 - `GET /api/healthz` — 健康检查
 - `GET /api/v1/models` — 模型列表（无需鉴权）
-- `POST /api/v1/chat/completions` — 代理请求（Bearer: `QQliutao011007.`）
-
-## 模型路由
-
-- `openai/*` → Replit OpenAI Integration
-- `anthropic/*` → Replit Anthropic Integration
-- `bedrock/*` → Replit OpenRouter Integration → Amazon Bedrock
+- `POST /api/v1/chat/completions` — Bearer: `QQliutao011007.`
