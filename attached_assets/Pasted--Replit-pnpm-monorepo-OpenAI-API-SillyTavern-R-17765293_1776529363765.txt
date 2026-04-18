@@ -1,0 +1,173 @@
+
+目标：在 Replit 的 pnpm monorepo 中实现并发布一个“仅后端”的 OpenAI 兼容代理 API，供 SillyTavern / 酒馆直接连接调用。不要创建任何前端页面、门户、React/Vite artifact。
+
+【环境准备】
+1. 在 Replit 侧边栏的 "Integrations" 中，添加并连接 "OpenAI" 和 "Anthropic" 官方集成。（注意：此操作会让 Replit 自动注入特定的环境变量和代理 URL，从而实现**扣除 Replit 账号积分**。**不要**要求我在 Secrets 中配置官方的 OPENAI_API_KEY 或 ANTHROPIC_API_KEY）
+2. 设置 Secrets：
+   - PROXY_API_KEY：任意字符串，作为外部客户端调用时的 Bearer Token
+   - SESSION_SECRET：任意安全字符串
+
+【只做后端】
+不要创建 api-portal
+不要创建任何 React/Vite 前端
+不要 presentArtifact
+不要做前端说明页
+只修改并发布 api-server
+
+【API Server 修改】
+文件：artifacts/api-server/src/routes/proxy.ts
+
+实现以下接口：
+
+1. GET /v1/models
+返回 OpenAI 风格模型列表 JSON：
+{
+  "object": "list",
+  "data": [
+    { "id": "gpt-5.2", "object": "model", "owned_by": "openai" },
+    { "id": "gpt-5-mini", "object": "model", "owned_by": "openai" },
+    { "id": "gpt-5-nano", "object": "model", "owned_by": "openai" },
+    { "id": "o4-mini", "object": "model", "owned_by": "openai" },
+    { "id": "o3", "object": "model", "owned_by": "openai" },
+    { "id": "claude-opus-4-6", "object": "model", "owned_by": "anthropic" },
+    { "id": "claude-sonnet-4-6", "object": "model", "owned_by": "anthropic" },
+    { "id": "claude-haiku-4-5", "object": "model", "owned_by": "anthropic" },
+    { "id": "claude-opus-4-5", "object": "model", "owned_by": "anthropic" },
+    { "id": "claude-opus-4-7", "object": "model", "owned_by": "anthropic" }
+  ]
+}
+
+2. POST /v1/chat/completions
+要求：
+- 验证 Authorization: Bearer ${process.env.PROXY_API_KEY}
+- 验证失败返回 401 JSON
+- 兼容 OpenAI chat completions 请求格式
+- 按 model 前缀分发：
+  - gpt 或 o 开头 → 调 OpenAI client
+  - claude 开头 → 调 Anthropic client
+
+3. 模型映射
+- 对外暴露上面的模型名
+- 服务端维护 alias -> provider 实际 model id 的映射表
+- 下游请求必须使用映射后的真实 provider model id
+- 不要直接把外部 model 原样发给 provider
+
+4. Anthropic 请求转换
+- 从 OpenAI messages 中提取 system 消息，合并成一个 system 字符串
+- messages 只保留 role 为 user / assistant 的内容
+- 转换成 Anthropic Messages API 所需格式
+
+5. 流式响应支持
+当 stream=true 时：
+- 设置响应头：
+  - Content-Type: text/event-stream; charset=utf-8
+  - Cache-Control: no-cache, no-transform
+  - Connection: keep-alive
+  - X-Accel-Buffering: no
+- 调用 res.flushHeaders()
+- 每 5 秒发送一次 keepalive：
+  : keepalive
+
+- req.on("close") 时 clearInterval
+- 使用 try/finally，确保异常时也能清理 keepalive，避免资源泄漏或 500
+
+6. OpenAI 流式透传
+- 读取 OpenAI SDK 的流式 chunk
+- 以 SSE 格式输出：
+  data: ${JSON.stringify(chunk)}
+
+- 每块输出后调用 res.flush()
+- 结束时发送：
+  data: [DONE]
+
+7. Anthropic 流式转换
+- 监听 Anthropic streaming events
+- 将 content_block_delta 的文本增量转换成 OpenAI chat.completion.chunk 格式，例如：
+{
+  "id": "...",
+  "object": "chat.completion.chunk",
+  "created": 1710000000,
+  "model": "外部请求里的模型名",
+  "choices": [
+    {
+      "index": 0,
+      "delta": { "content": "..." },
+      "finish_reason": null
+    }
+  ]
+}
+- 以 SSE 的 data: JSON 形式逐块输出
+- 每块后调用 res.flush()
+- 流结束时补一个 finish_reason=stop 的 chunk，然后发送 [DONE]
+
+8. 非流式响应
+- OpenAI：等待完整响应后，返回标准 OpenAI JSON
+- Anthropic：等待完整响应后，转换成 OpenAI chat completion JSON：
+{
+  "id": "...",
+  "object": "chat.completion",
+  "created": 1710000000,
+  "model": "外部请求里的模型名",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "最终文本"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
+
+9. 错误处理
+- provider 报错时尽量保留原始 status code
+- 返回 OpenAI 风格错误 JSON：
+{
+  "error": {
+    "message": "具体错误信息",
+    "type": "proxy_error"
+  }
+}
+
+10. 健康检查
+增加 GET /healthz
+返回：
+{ "ok": true }
+
+【Express 配置】
+文件：artifacts/api-server/src/app.ts
+要求：
+- Express body limit 设为 50mb
+- 挂载：
+  app.use("/v1", proxyRouter)
+- 如果 /healthz 不在 proxyRouter 中，请确保它也能被正常访问
+
+【发布配置】
+文件：artifacts/api-server/.replit-artifact/artifact.toml
+要求：
+- 在 paths 数组中加入 "/v1"
+- 加入 "/healthz"
+
+【Workflow 与发布】
+- 只启动 api-server workflow
+- 不要创建第二个前端 workflow
+- 完成后准备部署
+
+【验收标准】
+必须满足以下条件：
+1. GET /v1/models 可正常返回模型列表
+2. POST /v1/chat/completions 非流式可用
+3. POST /v1/chat/completions 流式可用
+4. SillyTavern / 酒馆可通过 Custom (OpenAI-compatible) 直接连接
+5. 不要生成任何前端页面
+6. 部署后可直接把域名作为 Base URL 使用；如果需要 /v1，也请明确告诉我最终该怎么填
+
+【最终输出给我】
+完成后请明确告诉我以下信息：
+1. 部署域名
+2. SillyTavern / 酒馆中应填写的 Base URL
+3. API Key 应填写 PROXY_API_KEY
+4. 可用模型列表
+5. 一条可直接测试的 curl 命令
+6. 如果酒馆需要填自定义请求路径，请一起说明
