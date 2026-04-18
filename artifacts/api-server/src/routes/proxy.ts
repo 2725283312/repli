@@ -1,9 +1,34 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import OpenAI from "openai";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+// Lazy OpenRouter client — only created when a bedrock/* model is requested
+let _openrouterClient: OpenAI | null = null;
+function getOpenrouterClient(): OpenAI {
+  if (!_openrouterClient) {
+    const apiKey = process.env["OPENROUTER_API_KEY"];
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+    _openrouterClient = new OpenAI({
+      apiKey,
+      baseURL: "https://openrouter.ai/api/v1",
+      defaultHeaders: {
+        "HTTP-Referer": "https://replit.com",
+        "X-Title": "AI Proxy",
+      },
+    });
+  }
+  return _openrouterClient;
+}
+
+// Map bedrock/claude-* → OpenRouter model name (anthropic/claude-*)
+function bedrockToOrModel(model: string): string {
+  const suffix = model.slice("bedrock/".length);
+  return suffix.startsWith("claude-") ? `anthropic/${suffix}` : suffix;
+}
 
 const MODEL_MAP: Record<string, { provider: "openai" | "anthropic"; realModel: string }> = {
   "gpt-5.2": { provider: "openai", realModel: "gpt-5.2" },
@@ -31,6 +56,13 @@ const MODELS_LIST = {
     { id: "claude-haiku-4-5", object: "model", owned_by: "anthropic" },
     { id: "claude-opus-4-5", object: "model", owned_by: "anthropic" },
     { id: "claude-opus-4-7", object: "model", owned_by: "anthropic" },
+    // Bedrock via OpenRouter
+    { id: "bedrock/claude-3-5-sonnet-20241022-v2:0", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3-5-haiku-20241022", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3-opus-20240229", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-opus-4-5", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-sonnet-4-5", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-haiku-4-5", object: "model", owned_by: "amazon-bedrock" },
   ],
 };
 
@@ -65,17 +97,97 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
   };
 
   const requestedModel = body.model ?? "";
-  const mapping = MODEL_MAP[requestedModel];
+  const isStream = body.stream === true;
+  const messages = body.messages ?? [];
 
+  // ── Bedrock via OpenRouter ─────────────────────────────────────────────────
+  if (requestedModel.startsWith("bedrock/")) {
+    const orModel = bedrockToOrModel(requestedModel);
+    const clientMaxTokens = body.max_tokens ?? body.max_completion_tokens;
+    const maxTokens = clientMaxTokens && clientMaxTokens > 0 ? clientMaxTokens : 16384;
+
+    const orParams = {
+      model: orModel,
+      messages: messages as OpenAI.ChatCompletionMessageParam[],
+      stream: isStream,
+      max_tokens: maxTokens,
+      ...(body.temperature != null ? { temperature: body.temperature } : {}),
+      // Force Amazon Bedrock as the provider
+      provider: { only: ["Amazon Bedrock"] },
+    } as unknown as OpenAI.ChatCompletionCreateParamsStreaming;
+
+    logger.info({ model: requestedModel, orModel, stream: isStream }, "bedrock/openrouter request");
+
+    let or: OpenAI;
+    try {
+      or = getOpenrouterClient();
+    } catch (err: unknown) {
+      res.status(500).json({ error: { message: (err as Error).message, type: "config_error" } });
+      return;
+    }
+
+    if (isStream) {
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      const keepalive = setInterval(() => {
+        try { res.write(": keepalive\n\n"); } catch (_) { /* ignore */ }
+      }, 5000);
+
+      let ended = false;
+      function safeEnd() {
+        if (!ended) { ended = true; clearInterval(keepalive); try { res.end(); } catch (_) { /* ignore */ } }
+      }
+      res.on("close", () => { ended = true; clearInterval(keepalive); });
+
+      try {
+        const stream = await or.chat.completions.create(orParams);
+        for await (const chunk of stream as AsyncIterable<OpenAI.ChatCompletionChunk>) {
+          if (ended) break;
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          (res as unknown as { flush?: () => void }).flush?.();
+        }
+        if (!ended) res.write("data: [DONE]\n\n");
+      } catch (err: unknown) {
+        const message = (err as { message?: string }).message ?? "Unknown error";
+        logger.error({ model: requestedModel, message }, "bedrock stream error");
+        if (!ended) {
+          res.write(`data: ${JSON.stringify({ error: { message, type: "proxy_error" } })}\n\n`);
+          res.write("data: [DONE]\n\n");
+        }
+      } finally {
+        safeEnd();
+      }
+      return;
+    }
+
+    // Non-streaming bedrock
+    try {
+      const response = await or.chat.completions.create({
+        ...orParams,
+        stream: false,
+      } as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming);
+      res.json(response);
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status ?? 500;
+      const message = (err as { message?: string }).message ?? "Unknown error";
+      logger.error({ model: requestedModel, status, message }, "bedrock error");
+      res.status(status).json({ error: { message, type: "proxy_error" } });
+    }
+    return;
+  }
+
+  // ── OpenAI / Anthropic (existing routing) ─────────────────────────────────
+  const mapping = MODEL_MAP[requestedModel];
   if (!mapping) {
     res.status(400).json({
       error: { message: `未知模型: ${requestedModel}`, type: "proxy_error" },
     });
     return;
   }
-
-  const isStream = body.stream === true;
-  const messages = body.messages ?? [];
 
   function buildAnthropicParams(stream: boolean) {
     const systemMessages = messages
@@ -96,8 +208,6 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       content: m.content,
     }));
 
-    // Use client-provided max_tokens if given and larger than our default,
-    // otherwise default to 16384 for more headroom.
     const clientMaxTokens = body.max_tokens ?? body.max_completion_tokens;
     const maxTokens = clientMaxTokens && clientMaxTokens > 0 ? clientMaxTokens : 16384;
 
@@ -108,11 +218,8 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       stream,
     };
 
-    if (systemMessages) {
-      params.system = systemMessages;
-    }
+    if (systemMessages) params.system = systemMessages;
 
-    // claude-opus-4-7 does not support temperature
     if (mapping.realModel !== "claude-opus-4-7" && body.temperature != null) {
       params.temperature = body.temperature as number;
     }
@@ -140,8 +247,6 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       }
     }
 
-    // Listen on res (downstream) rather than req (upstream proxy connection),
-    // so we only stop when the actual client (SillyTavern) disconnects.
     res.on("close", () => {
       ended = true;
       clearInterval(keepaliveInterval);
@@ -171,7 +276,6 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
         }
         if (!ended) res.write("data: [DONE]\n\n");
       } else {
-        // Anthropic streaming
         const anthropicParams = buildAnthropicParams(false);
         logger.info({ model: requestedModel, max_tokens: anthropicParams.max_tokens }, "anthropic stream request");
 
@@ -190,13 +294,7 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
               object: "chat.completion.chunk",
               created: Math.floor(Date.now() / 1000),
               model: requestedModel,
-              choices: [
-                {
-                  index: 0,
-                  delta: { content: event.delta.text },
-                  finish_reason: null,
-                },
-              ],
+              choices: [{ index: 0, delta: { content: event.delta.text }, finish_reason: null }],
             };
             res.write(`data: ${JSON.stringify(chunk)}\n\n`);
             (res as unknown as { flush?: () => void }).flush?.();
@@ -216,9 +314,7 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
             object: "chat.completion.chunk",
             created: Math.floor(Date.now() / 1000),
             model: requestedModel,
-            choices: [
-              { index: 0, delta: {}, finish_reason: finishReason },
-            ],
+            choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
           };
           res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
           res.write("data: [DONE]\n\n");
@@ -239,7 +335,7 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
     return;
   }
 
-  // Non-streaming
+  // Non-streaming OpenAI / Anthropic
   try {
     if (mapping.provider === "openai") {
       const openaiParams: Parameters<typeof openai.chat.completions.create>[0] = {
@@ -273,13 +369,7 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
         model: requestedModel,
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content: text },
-            finish_reason: finishReason,
-          },
-        ],
+        choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: finishReason }],
         usage: {
           prompt_tokens: response.usage.input_tokens,
           completion_tokens: response.usage.output_tokens,
