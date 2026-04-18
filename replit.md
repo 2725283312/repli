@@ -34,6 +34,13 @@ pnpm workspace monorepo，TypeScript，Node.js 24，Express 5。
 
 ## 环境变量
 
-- `PROXY_API_KEY` — 客户端鉴权 key，默认 `QQliutao011007.`
+- `PROXY_API_KEY` — 客户端鉴权 key，默认 `QQliutao011007.`，无需设置
+- `OPENROUTER_API_KEY` — OpenRouter API Key，用于 `bedrock/*` 模型路由，需手动在 Secrets 中设置
 - `AI_INTEGRATIONS_OPENAI_API_KEY` / `AI_INTEGRATIONS_OPENAI_BASE_URL` — Replit 自动注入
 - `AI_INTEGRATIONS_ANTHROPIC_API_KEY` / `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` — Replit 自动注入
+
+## 模型路由
+
+- `gpt-*` / `o*` → OpenAI（Replit Integrations）
+- `claude-*` → Anthropic（Replit Integrations）
+- `bedrock/*` → OpenRouter → Amazon Bedrock（需 `OPENROUTER_API_KEY`）
