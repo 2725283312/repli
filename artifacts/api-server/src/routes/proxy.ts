@@ -37,7 +37,7 @@ const MODELS_LIST = {
 const OPENAI_NO_TEMP = new Set(["gpt-5.2", "gpt-5-mini", "gpt-5-nano", "o4-mini", "o3"]);
 
 function authMiddleware(req: Request, res: Response, next: () => void) {
-  const proxyKey = process.env["PROXY_API_KEY"] ?? "QQliutao011007";
+  const proxyKey = process.env["PROXY_API_KEY"] ?? "QQliutao011007.";
   const authHeader = req.headers["authorization"] ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!proxyKey || token !== proxyKey) {
