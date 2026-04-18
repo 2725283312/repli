@@ -37,13 +37,15 @@ const MODELS_LIST = {
     { id: "anthropic/claude-opus-4-5",   object: "model", owned_by: "anthropic" },
     { id: "anthropic/claude-sonnet-4-6", object: "model", owned_by: "anthropic" },
     { id: "anthropic/claude-haiku-4-5",  object: "model", owned_by: "anthropic" },
-    // Bedrock via Replit OpenRouter AI Integrations
-    { id: "bedrock/claude-3-5-sonnet-20241022-v2:0", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-3-5-haiku-20241022",       object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-3-opus-20240229",           object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-opus-4-5",                  object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-sonnet-4-5",                object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-haiku-4-5",                 object: "model", owned_by: "amazon-bedrock" },
+    // Bedrock via Replit OpenRouter AI Integrations（模型名对应 OpenRouter 的 anthropic/* ID）
+    { id: "bedrock/claude-opus-4.7",    object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-opus-4.6",    object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-opus-4.5",    object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-sonnet-4.6",  object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-sonnet-4.5",  object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-haiku-4.5",   object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3.7-sonnet",  object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3.5-haiku",   object: "model", owned_by: "amazon-bedrock" },
   ],
 };
 
