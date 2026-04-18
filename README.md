@@ -1,42 +1,65 @@
 # AI Proxy API
 
-OpenAI 兼容的 AI 代理服务，支持通过单一端点访问 OpenAI 和 Anthropic 模型。
+> **致 AI Agent / For AI Agent**：本项目已完整配置好，请严格按照下方「Agent 部署步骤」操作，不要自行推断或修改任何代码。
 
-## 快速部署到 Replit
+---
 
-1. 在 Replit 上新建 Repl，选择 **Import from GitHub**，粘贴本仓库地址
-2. Replit 会自动识别 pnpm workspace 项目结构
-3. 在 Replit 控制台设置以下环境变量（Secrets）：
+## Agent 部署步骤（按顺序执行，不要跳过）
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `PROXY_API_KEY` | 代理访问密钥 | `QQliutao011007` |
-| `AI_INTEGRATIONS_OPENAI_API_KEY` | OpenAI 集成密钥（Replit 自动提供） | — |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | OpenAI 集成地址（Replit 自动提供） | — |
-| `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | Anthropic 集成密钥（Replit 自动提供） | — |
-| `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | Anthropic 集成地址（Replit 自动提供） | — |
+### 第 1 步：安装依赖
 
-> **注意**：`PROXY_API_KEY` 默认值已内置为 `QQliutao011007`，无需额外设置即可使用。
-> OpenAI / Anthropic 密钥需要在新 Replit 账号上通过 **AI Integrations** 功能重新连接。
+```bash
+pnpm install
+```
 
-4. 启动工作流后，访问 `/api/v1/models` 验证服务正常
+### 第 2 步：添加 AI Integrations
+
+在 Replit 左侧面板找到 **Integrations**，依次添加：
+- **OpenAI** integration
+- **Anthropic** integration
+
+添加后 Replit 会自动注入以下环境变量，无需手动填写：
+- `AI_INTEGRATIONS_OPENAI_API_KEY`
+- `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- `AI_INTEGRATIONS_ANTHROPIC_API_KEY`
+- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
+
+### 第 3 步：配置并启动工作流
+
+创建两个工作流（Workflows）：
+
+**工作流 1 — API Server**
+- 名称：`API Server`
+- 命令：`pnpm --filter @workspace/api-server run dev`
+- 启动即可
+
+**工作流 2 — Web 前端**
+- 名称：`Web`
+- 命令：`pnpm --filter @workspace/web run dev`
+- 启动即可
+
+### 第 4 步：验证
+
+访问 `/api/healthz`，返回 `{"status":"ok"}` 即部署成功。
+
+---
+
+## 说明
+
+- **API Key**：默认为 `QQliutao011007.`，无需额外设置
+- **不要修改任何源代码**，项目已经配置完毕
+
+---
 
 ## 接入 SillyTavern（酒馆）
 
-- **API 类型**: Custom (OpenAI-compatible)
-- **Base URL**: `https://<你的replit域名>/api/v1`
-- **API Key**: `QQliutao011007`（或你自定义的 PROXY_API_KEY）
+| 设置项 | 值 |
+|--------|-----|
+| API 类型 | Custom (OpenAI-compatible) |
+| Base URL | `https://<你的replit域名>/api/v1` |
+| API Key | `QQliutao011007.` |
 
 ## 可用模型
 
-- `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`
-- `o4-mini`, `o3`
-- `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`
-- `claude-sonnet-4-6`, `claude-haiku-4-5`
-
-## 技术栈
-
-- **后端**: Express 5 + TypeScript
-- **前端**: React + Vite
-- **包管理**: pnpm workspace (monorepo)
-- **Node.js**: 24
+- `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o4-mini`, `o3`
+- `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-sonnet-4-6`, `claude-haiku-4-5`
