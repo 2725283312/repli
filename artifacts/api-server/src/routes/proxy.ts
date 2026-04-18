@@ -1,68 +1,49 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import OpenAI from "openai";
+import { openrouter } from "@workspace/integrations-openrouter-ai";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// Lazy OpenRouter client — only created when a bedrock/* model is requested
-let _openrouterClient: OpenAI | null = null;
-function getOpenrouterClient(): OpenAI {
-  if (!_openrouterClient) {
-    const apiKey = process.env["OPENROUTER_API_KEY"];
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
-    _openrouterClient = new OpenAI({
-      apiKey,
-      baseURL: "https://openrouter.ai/api/v1",
-      defaultHeaders: {
-        "HTTP-Referer": "https://replit.com",
-        "X-Title": "AI Proxy",
-      },
-    });
-  }
-  return _openrouterClient;
-}
-
-// Map bedrock/claude-* → OpenRouter model name (anthropic/claude-*)
-function bedrockToOrModel(model: string): string {
-  const suffix = model.slice("bedrock/".length);
-  return suffix.startsWith("claude-") ? `anthropic/${suffix}` : suffix;
-}
-
+// Static model map — keys now include provider prefix
 const MODEL_MAP: Record<string, { provider: "openai" | "anthropic"; realModel: string }> = {
-  "gpt-5.2": { provider: "openai", realModel: "gpt-5.2" },
-  "gpt-5-mini": { provider: "openai", realModel: "gpt-5-mini" },
-  "gpt-5-nano": { provider: "openai", realModel: "gpt-5-nano" },
-  "o4-mini": { provider: "openai", realModel: "o4-mini" },
-  "o3": { provider: "openai", realModel: "o3" },
-  "claude-opus-4-6": { provider: "anthropic", realModel: "claude-opus-4-6" },
-  "claude-sonnet-4-6": { provider: "anthropic", realModel: "claude-sonnet-4-6" },
-  "claude-haiku-4-5": { provider: "anthropic", realModel: "claude-haiku-4-5" },
-  "claude-opus-4-5": { provider: "anthropic", realModel: "claude-opus-4-5" },
-  "claude-opus-4-7": { provider: "anthropic", realModel: "claude-opus-4-7" },
+  // OpenAI
+  "openai/gpt-5.2":    { provider: "openai", realModel: "gpt-5.2" },
+  "openai/gpt-5-mini": { provider: "openai", realModel: "gpt-5-mini" },
+  "openai/gpt-5-nano": { provider: "openai", realModel: "gpt-5-nano" },
+  "openai/o4-mini":    { provider: "openai", realModel: "o4-mini" },
+  "openai/o3":         { provider: "openai", realModel: "o3" },
+  // Anthropic (direct)
+  "anthropic/claude-opus-4-7":   { provider: "anthropic", realModel: "claude-opus-4-7" },
+  "anthropic/claude-opus-4-6":   { provider: "anthropic", realModel: "claude-opus-4-6" },
+  "anthropic/claude-opus-4-5":   { provider: "anthropic", realModel: "claude-opus-4-5" },
+  "anthropic/claude-sonnet-4-6": { provider: "anthropic", realModel: "claude-sonnet-4-6" },
+  "anthropic/claude-haiku-4-5":  { provider: "anthropic", realModel: "claude-haiku-4-5" },
 };
 
 const MODELS_LIST = {
   object: "list",
   data: [
-    { id: "gpt-5.2", object: "model", owned_by: "openai" },
-    { id: "gpt-5-mini", object: "model", owned_by: "openai" },
-    { id: "gpt-5-nano", object: "model", owned_by: "openai" },
-    { id: "o4-mini", object: "model", owned_by: "openai" },
-    { id: "o3", object: "model", owned_by: "openai" },
-    { id: "claude-opus-4-6", object: "model", owned_by: "anthropic" },
-    { id: "claude-sonnet-4-6", object: "model", owned_by: "anthropic" },
-    { id: "claude-haiku-4-5", object: "model", owned_by: "anthropic" },
-    { id: "claude-opus-4-5", object: "model", owned_by: "anthropic" },
-    { id: "claude-opus-4-7", object: "model", owned_by: "anthropic" },
-    // Bedrock via OpenRouter
+    // OpenAI via Replit AI Integrations
+    { id: "openai/gpt-5.2",    object: "model", owned_by: "openai" },
+    { id: "openai/gpt-5-mini", object: "model", owned_by: "openai" },
+    { id: "openai/gpt-5-nano", object: "model", owned_by: "openai" },
+    { id: "openai/o4-mini",    object: "model", owned_by: "openai" },
+    { id: "openai/o3",         object: "model", owned_by: "openai" },
+    // Anthropic via Replit AI Integrations
+    { id: "anthropic/claude-opus-4-7",   object: "model", owned_by: "anthropic" },
+    { id: "anthropic/claude-opus-4-6",   object: "model", owned_by: "anthropic" },
+    { id: "anthropic/claude-opus-4-5",   object: "model", owned_by: "anthropic" },
+    { id: "anthropic/claude-sonnet-4-6", object: "model", owned_by: "anthropic" },
+    { id: "anthropic/claude-haiku-4-5",  object: "model", owned_by: "anthropic" },
+    // Bedrock via Replit OpenRouter AI Integrations
     { id: "bedrock/claude-3-5-sonnet-20241022-v2:0", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-3-5-haiku-20241022", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-3-opus-20240229", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-opus-4-5", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-sonnet-4-5", object: "model", owned_by: "amazon-bedrock" },
-    { id: "bedrock/claude-haiku-4-5", object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3-5-haiku-20241022",       object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-3-opus-20240229",           object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-opus-4-5",                  object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-sonnet-4-5",                object: "model", owned_by: "amazon-bedrock" },
+    { id: "bedrock/claude-haiku-4-5",                 object: "model", owned_by: "amazon-bedrock" },
   ],
 };
 
@@ -100,31 +81,25 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
   const isStream = body.stream === true;
   const messages = body.messages ?? [];
 
-  // ── Bedrock via OpenRouter ─────────────────────────────────────────────────
+  // ── Bedrock via Replit OpenRouter integration ──────────────────────────────
   if (requestedModel.startsWith("bedrock/")) {
-    const orModel = bedrockToOrModel(requestedModel);
+    const modelSuffix = requestedModel.slice("bedrock/".length);
+    // Map bedrock/claude-X → anthropic/claude-X for OpenRouter Bedrock routing
+    const orModel = modelSuffix.startsWith("claude-") ? `anthropic/${modelSuffix}` : modelSuffix;
     const clientMaxTokens = body.max_tokens ?? body.max_completion_tokens;
     const maxTokens = clientMaxTokens && clientMaxTokens > 0 ? clientMaxTokens : 16384;
 
+    // Cast to any to pass OpenRouter-specific provider routing field
     const orParams = {
       model: orModel,
-      messages: messages as OpenAI.ChatCompletionMessageParam[],
+      messages: messages as { role: "user" | "assistant" | "system"; content: string }[],
       stream: isStream,
       max_tokens: maxTokens,
       ...(body.temperature != null ? { temperature: body.temperature } : {}),
-      // Force Amazon Bedrock as the provider
       provider: { only: ["Amazon Bedrock"] },
-    } as unknown as OpenAI.ChatCompletionCreateParamsStreaming;
+    } as Parameters<typeof openrouter.chat.completions.create>[0];
 
-    logger.info({ model: requestedModel, orModel, stream: isStream }, "bedrock/openrouter request");
-
-    let or: OpenAI;
-    try {
-      or = getOpenrouterClient();
-    } catch (err: unknown) {
-      res.status(500).json({ error: { message: (err as Error).message, type: "config_error" } });
-      return;
-    }
+    logger.info({ model: requestedModel, orModel, stream: isStream }, "bedrock request via openrouter");
 
     if (isStream) {
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -144,8 +119,8 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       res.on("close", () => { ended = true; clearInterval(keepalive); });
 
       try {
-        const stream = await or.chat.completions.create(orParams);
-        for await (const chunk of stream as AsyncIterable<OpenAI.ChatCompletionChunk>) {
+        const stream = await openrouter.chat.completions.create({ ...orParams, stream: true });
+        for await (const chunk of stream) {
           if (ended) break;
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
           (res as unknown as { flush?: () => void }).flush?.();
@@ -164,12 +139,8 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       return;
     }
 
-    // Non-streaming bedrock
     try {
-      const response = await or.chat.completions.create({
-        ...orParams,
-        stream: false,
-      } as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming);
+      const response = await openrouter.chat.completions.create({ ...orParams, stream: false });
       res.json(response);
     } catch (err: unknown) {
       const status = (err as { status?: number }).status ?? 500;
@@ -180,50 +151,33 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
     return;
   }
 
-  // ── OpenAI / Anthropic (existing routing) ─────────────────────────────────
+  // ── OpenAI / Anthropic ─────────────────────────────────────────────────────
   const mapping = MODEL_MAP[requestedModel];
   if (!mapping) {
     res.status(400).json({
-      error: { message: `未知模型: ${requestedModel}`, type: "proxy_error" },
+      error: { message: `未知模型: ${requestedModel}。可用前缀: openai/, anthropic/, bedrock/`, type: "proxy_error" },
     });
     return;
   }
 
   function buildAnthropicParams(stream: boolean) {
-    const systemMessages = messages
-      .filter((m) => m.role === "system")
-      .map((m) => m.content)
-      .join("\n");
-
-    let nonSystemMessages = messages.filter(
-      (m) => m.role === "user" || m.role === "assistant",
-    );
-
-    if (nonSystemMessages.length === 0 || nonSystemMessages[0]?.role === "assistant") {
-      nonSystemMessages = [{ role: "user", content: "(continue)" }, ...nonSystemMessages];
+    const systemMessages = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+    let nonSys = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    if (nonSys.length === 0 || nonSys[0]?.role === "assistant") {
+      nonSys = [{ role: "user", content: "(continue)" }, ...nonSys];
     }
-
-    const anthropicMessages = nonSystemMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
     const clientMaxTokens = body.max_tokens ?? body.max_completion_tokens;
     const maxTokens = clientMaxTokens && clientMaxTokens > 0 ? clientMaxTokens : 16384;
-
     const params: Parameters<typeof anthropic.messages.create>[0] = {
       model: mapping.realModel,
       max_tokens: maxTokens,
-      messages: anthropicMessages,
+      messages: nonSys.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       stream,
     };
-
     if (systemMessages) params.system = systemMessages;
-
     if (mapping.realModel !== "claude-opus-4-7" && body.temperature != null) {
       params.temperature = body.temperature as number;
     }
-
     return params;
   }
 
@@ -240,17 +194,9 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
 
     let ended = false;
     function safeEnd() {
-      if (!ended) {
-        ended = true;
-        clearInterval(keepaliveInterval);
-        try { res.end(); } catch (_) { /* ignore if already closed */ }
-      }
+      if (!ended) { ended = true; clearInterval(keepaliveInterval); try { res.end(); } catch (_) { /* ignore */ } }
     }
-
-    res.on("close", () => {
-      ended = true;
-      clearInterval(keepaliveInterval);
-    });
+    res.on("close", () => { ended = true; clearInterval(keepaliveInterval); });
 
     try {
       if (mapping.provider === "openai") {
@@ -259,14 +205,9 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
           messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
           stream: true,
         };
-        if (body.max_completion_tokens != null) {
-          openaiParams.max_completion_tokens = body.max_completion_tokens;
-        } else if (body.max_tokens != null) {
-          openaiParams.max_completion_tokens = body.max_tokens;
-        }
-        if (!OPENAI_NO_TEMP.has(mapping.realModel) && body.temperature != null) {
-          openaiParams.temperature = body.temperature;
-        }
+        if (body.max_completion_tokens != null) openaiParams.max_completion_tokens = body.max_completion_tokens;
+        else if (body.max_tokens != null) openaiParams.max_completion_tokens = body.max_tokens;
+        if (!OPENAI_NO_TEMP.has(mapping.realModel) && body.temperature != null) openaiParams.temperature = body.temperature;
 
         const stream = await openai.chat.completions.create(openaiParams);
         for await (const chunk of stream) {
@@ -278,16 +219,10 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       } else {
         const anthropicParams = buildAnthropicParams(false);
         logger.info({ model: requestedModel, max_tokens: anthropicParams.max_tokens }, "anthropic stream request");
-
-        const stream = anthropic.messages.stream(
-          anthropicParams as Parameters<typeof anthropic.messages.stream>[0],
-        );
-
+        const stream = anthropic.messages.stream(anthropicParams as Parameters<typeof anthropic.messages.stream>[0]);
         let stopReason: string | null = null;
-
         for await (const event of stream) {
           if (ended) break;
-
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             const chunk = {
               id: `chatcmpl-${Date.now()}`,
@@ -303,20 +238,10 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
             logger.info({ model: requestedModel, stop_reason: stopReason, output_tokens: event.usage?.output_tokens }, "anthropic message_delta");
           }
         }
-
         if (!ended) {
           const finishReason = stopReason === "max_tokens" ? "length" : "stop";
-          if (stopReason === "max_tokens") {
-            logger.warn({ model: requestedModel }, "anthropic hit max_tokens limit — response truncated");
-          }
-          const finalChunk = {
-            id: `chatcmpl-${Date.now()}`,
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model: requestedModel,
-            choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-          };
-          res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+          if (stopReason === "max_tokens") logger.warn({ model: requestedModel }, "anthropic hit max_tokens limit");
+          res.write(`data: ${JSON.stringify({ id: `chatcmpl-${Date.now()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: requestedModel, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] })}\n\n`);
           res.write("data: [DONE]\n\n");
         }
       }
@@ -325,8 +250,7 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
       const message = (err as { message?: string }).message ?? "Unknown error";
       logger.error({ model: requestedModel, status, message }, "proxy stream error");
       if (!ended) {
-        const errChunk = { error: { message, type: "proxy_error" } };
-        res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: { message, type: "proxy_error" } })}\n\n`);
         res.write("data: [DONE]\n\n");
       }
     } finally {
@@ -343,38 +267,26 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
         messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
         stream: false,
       };
-      if (body.max_completion_tokens != null) {
-        openaiParams.max_completion_tokens = body.max_completion_tokens;
-      } else if (body.max_tokens != null) {
-        openaiParams.max_completion_tokens = body.max_tokens;
-      }
-      if (!OPENAI_NO_TEMP.has(mapping.realModel) && body.temperature != null) {
-        openaiParams.temperature = body.temperature;
-      }
+      if (body.max_completion_tokens != null) openaiParams.max_completion_tokens = body.max_completion_tokens;
+      else if (body.max_tokens != null) openaiParams.max_completion_tokens = body.max_tokens;
+      if (!OPENAI_NO_TEMP.has(mapping.realModel) && body.temperature != null) openaiParams.temperature = body.temperature;
       const response = await openai.chat.completions.create(openaiParams);
       res.json(response);
     } else {
       const anthropicParams = buildAnthropicParams(false);
       logger.info({ model: requestedModel, max_tokens: anthropicParams.max_tokens }, "anthropic non-stream request");
-
       const response = await anthropic.messages.create(anthropicParams);
       logger.info({ model: requestedModel, stop_reason: response.stop_reason, output_tokens: response.usage.output_tokens }, "anthropic non-stream response");
-
       const textBlock = response.content.find((b) => b.type === "text");
       const text = textBlock?.type === "text" ? textBlock.text : "";
       const finishReason = response.stop_reason === "max_tokens" ? "length" : "stop";
-
       res.json({
         id: response.id,
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
         model: requestedModel,
         choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: finishReason }],
-        usage: {
-          prompt_tokens: response.usage.input_tokens,
-          completion_tokens: response.usage.output_tokens,
-          total_tokens: response.usage.input_tokens + response.usage.output_tokens,
-        },
+        usage: { prompt_tokens: response.usage.input_tokens, completion_tokens: response.usage.output_tokens, total_tokens: response.usage.input_tokens + response.usage.output_tokens },
       });
     }
   } catch (err: unknown) {
