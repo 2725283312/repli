@@ -1,75 +1,39 @@
-# Workspace
+# 部署指令（仅供 AI Agent 执行）
 
-## ⚡ 首次部署指令（Agent 必读，新账号 import 后立即执行）
+此项目已开发完毕，禁止修改任何源代码。按以下步骤操作：
 
-**这是一个已完整开发完毕的项目，不需要任何代码修改。** 请按以下步骤完成部署：
+1. 运行 `pnpm install`
+2. 在 Replit Integrations 面板添加 **OpenAI** 和 **Anthropic** 集成（AI 密钥由 Replit 平台自动注入，不得手动填写或硬编码）
+3. 启动已有的两个工作流（api-server 和 web）
+4. 访问 `/api/healthz` 确认返回 `{"status":"ok"}`
 
-1. **安装依赖**（如果 node_modules 不存在）：
-   ```
-   pnpm install
-   ```
-
-2. **添加 AI Integrations**：在 Replit 左侧面板 → Integrations，添加 **OpenAI** 和 **Anthropic** 集成。完成后环境变量会自动注入，无需手动配置。
-
-3. **启动工作流**：以下工作流应已存在（来自 artifact.toml），直接启动即可：
-   - `artifacts/api-server` — API 后端服务
-   - `artifacts/web` — 前端面板
-
-4. **验证**：访问 `/api/healthz` 返回 `{"status":"ok"}` 即成功。
-
-**默认 API Key**：`QQliutao011007.`（无需设置 PROXY_API_KEY 环境变量）
-
-**不要修改任何源代码。不要重新生成或重构任何内容。**
+默认 API Key：`QQliutao011007.`（无需设置环境变量）
 
 ---
 
-## Overview
+# Workspace
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo，TypeScript，Node.js 24，Express 5。
 
-## Stack
+## 关键命令
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
-- **AI Providers**: OpenAI (via Replit AI Integrations), Anthropic (via Replit AI Integrations)
+- `pnpm install` — 安装依赖
+- `pnpm --filter @workspace/api-server run dev` — 启动 API 服务
+- `pnpm --filter @workspace/web run dev` — 启动前端
 
-## Key Commands
+## API 端点
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `GET /api/healthz` — 健康检查
+- `GET /api/v1/models` — 模型列表（无需鉴权）
+- `POST /api/v1/chat/completions` — 代理请求（需 Bearer token）
 
-## AI Proxy API
+## 模型路由
 
-The api-server exposes an OpenAI-compatible proxy at `/api/v1/`:
+- `gpt-*` / `o*` → OpenAI（通过 Replit AI Integrations 自动提供密钥）
+- `claude-*` → Anthropic（通过 Replit AI Integrations 自动提供密钥）
 
-- `GET /api/v1/models` — returns model list (no auth required)
-- `POST /api/v1/chat/completions` — proxies to OpenAI or Anthropic based on model prefix (requires Bearer token)
-- `GET /api/healthz` — health check
+## 环境变量
 
-### Model Routing
-- `gpt-*` and `o*` models → OpenAI (via `@workspace/integrations-openai-ai-server`)
-- `claude-*` models → Anthropic (via `@workspace/integrations-anthropic-ai`)
-
-### Secrets
-- `PROXY_API_KEY` — Bearer token for external clients (e.g. SillyTavern)
-- `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL` — auto-provisioned by Replit
-- `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` — auto-provisioned by Replit
-
-### SillyTavern / 酒馆 Connection
-- API Type: Custom (OpenAI-compatible)
-- Base URL: `https://<domain>/api/v1`
-- API Key: value of `PROXY_API_KEY`
-
-See `artifacts/api-server/src/routes/proxy.ts` for the full implementation.
-
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+- `PROXY_API_KEY` — 客户端鉴权 key，默认 `QQliutao011007.`
+- `AI_INTEGRATIONS_OPENAI_API_KEY` / `AI_INTEGRATIONS_OPENAI_BASE_URL` — Replit 自动注入
+- `AI_INTEGRATIONS_ANTHROPIC_API_KEY` / `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` — Replit 自动注入
