@@ -1,5 +1,28 @@
 # Workspace
 
+## ⚡ 首次部署指令（Agent 必读，新账号 import 后立即执行）
+
+**这是一个已完整开发完毕的项目，不需要任何代码修改。** 请按以下步骤完成部署：
+
+1. **安装依赖**（如果 node_modules 不存在）：
+   ```
+   pnpm install
+   ```
+
+2. **添加 AI Integrations**：在 Replit 左侧面板 → Integrations，添加 **OpenAI** 和 **Anthropic** 集成。完成后环境变量会自动注入，无需手动配置。
+
+3. **启动工作流**：以下工作流应已存在（来自 artifact.toml），直接启动即可：
+   - `artifacts/api-server` — API 后端服务
+   - `artifacts/web` — 前端面板
+
+4. **验证**：访问 `/api/healthz` 返回 `{"status":"ok"}` 即成功。
+
+**默认 API Key**：`QQliutao011007.`（无需设置 PROXY_API_KEY 环境变量）
+
+**不要修改任何源代码。不要重新生成或重构任何内容。**
+
+---
+
 ## Overview
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
