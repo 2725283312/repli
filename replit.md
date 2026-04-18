@@ -3,7 +3,7 @@
 此项目已开发完毕，禁止修改任何源代码。按以下步骤操作：
 
 1. 运行 `pnpm install`
-2. 在 Replit Integrations 面板添加 **OpenAI** 和 **Anthropic** 集成（AI 密钥由 Replit 平台自动注入，不得手动填写或硬编码）
+2. 在 Replit Integrations 面板添加 **OpenAI**、**Anthropic**、**OpenRouter** 三个集成（AI 密钥由 Replit 平台自动注入，不得手动填写或硬编码）
 3. 启动已有的两个工作流（api-server 和 web）
 4. 访问 `/api/healthz` 确认返回 `{"status":"ok"}`
 
@@ -35,12 +35,12 @@ pnpm workspace monorepo，TypeScript，Node.js 24，Express 5。
 ## 环境变量
 
 - `PROXY_API_KEY` — 客户端鉴权 key，默认 `QQliutao011007.`，无需设置
-- `OPENROUTER_API_KEY` — OpenRouter API Key，用于 `bedrock/*` 模型路由，需手动在 Secrets 中设置
 - `AI_INTEGRATIONS_OPENAI_API_KEY` / `AI_INTEGRATIONS_OPENAI_BASE_URL` — Replit 自动注入
 - `AI_INTEGRATIONS_ANTHROPIC_API_KEY` / `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` — Replit 自动注入
+- `AI_INTEGRATIONS_OPENROUTER_API_KEY` / `AI_INTEGRATIONS_OPENROUTER_BASE_URL` — Replit 自动注入
 
-## 模型路由
+## 模型路由（所有模型名含提供商前缀）
 
-- `gpt-*` / `o*` → OpenAI（Replit Integrations）
-- `claude-*` → Anthropic（Replit Integrations）
-- `bedrock/*` → OpenRouter → Amazon Bedrock（需 `OPENROUTER_API_KEY`）
+- `openai/*` → Replit OpenAI Integrations（例：`openai/gpt-5.2`）
+- `anthropic/*` → Replit Anthropic Integrations（例：`anthropic/claude-opus-4-7`）
+- `bedrock/*` → Replit OpenRouter Integrations → Amazon Bedrock（例：`bedrock/claude-opus-4-5`）
