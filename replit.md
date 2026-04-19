@@ -6,6 +6,7 @@
 - **禁止**调用 createArtifact / updateArtifact / listArtifacts（artifact 已存在）
 - **禁止**修改任何源代码
 - **禁止**手动设置 AI_INTEGRATIONS_* 环境变量
+- **禁止**手动创建名为 "API Server" 的工作流——会与 artifact 工作流竞争端口 8080，导致 artifact 工作流崩溃、对外服务中断（已知 bug 根因）
 
 ---
 
