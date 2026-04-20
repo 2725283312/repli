@@ -85,7 +85,10 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
 
   // ── Bedrock via Replit OpenRouter integration ──────────────────────────────
   if (requestedModel.startsWith("bedrock/")) {
-    const modelSuffix = requestedModel.slice("bedrock/".length);
+    const rawSuffix = requestedModel.slice("bedrock/".length);
+    // Normalize hyphen version numbers to dot notation: claude-3-5-* → claude-3.5-*, claude-3-7-* → claude-3.7-*
+    const modelSuffix = rawSuffix.replace(/^claude-(\d)-(\d)-/, "claude-$1.$2-");
+
     // Map bedrock/claude-X → anthropic/claude-X for OpenRouter Bedrock routing
     const orModel = modelSuffix.startsWith("claude-") ? `anthropic/${modelSuffix}` : modelSuffix;
     const clientMaxTokens = body.max_tokens ?? body.max_completion_tokens;
@@ -154,12 +157,19 @@ router.post("/chat/completions", authMiddleware, async (req: Request, res: Respo
   }
 
   // ── OpenAI / Anthropic ─────────────────────────────────────────────────────
-  const mapping = MODEL_MAP[requestedModel];
+  // Use MODEL_MAP if found, otherwise pass-through with prefix-based routing
+  let mapping = MODEL_MAP[requestedModel];
   if (!mapping) {
-    res.status(400).json({
-      error: { message: `未知模型: ${requestedModel}。可用前缀: openai/, anthropic/, bedrock/`, type: "proxy_error" },
-    });
-    return;
+    if (requestedModel.startsWith("openai/")) {
+      mapping = { provider: "openai", realModel: requestedModel.slice("openai/".length) };
+    } else if (requestedModel.startsWith("anthropic/")) {
+      mapping = { provider: "anthropic", realModel: requestedModel.slice("anthropic/".length) };
+    } else {
+      res.status(400).json({
+        error: { message: `未知模型: ${requestedModel}。可用前缀: openai/, anthropic/, bedrock/`, type: "proxy_error" },
+      });
+      return;
+    }
   }
 
   function buildAnthropicParams(stream: boolean) {
