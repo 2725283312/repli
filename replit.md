@@ -8,7 +8,7 @@
 - **禁止**调用 listArtifacts / createArtifact / updateArtifact
 - **禁止**手动设置 AI_INTEGRATIONS_* 环境变量
 - **禁止**修改任何源代码
-
+- **禁止**修改replit.md文件
 ---
 
 ## ✅ 执行步骤（4步，按顺序，全部用工具执行）
